@@ -201,5 +201,3 @@ server <- function(input, output) {
 }
 
 shinyApp(ui, server)
-
-runGitHub( "Hackathon2022", "DrAlexBeck")
