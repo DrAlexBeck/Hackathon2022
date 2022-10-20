@@ -1,0 +1,341 @@
+---
+title: "Hackathon 2022"
+author: "The Best Hackathon Team"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r include = FALSE}
+### Load Packages
+library(tidyverse)
+library(tidymodels)
+library(DALEX)
+library(DALEXtra)
+library(ggeffects)
+library(dotwhisker)
+```
+
+```{r eval = FALSE}
+# AHRF Data
+library(sjlabelled)
+
+ahrf <- read_sas("AHRF2021.sas7bdat")
+ahrf_colnames <- colnames(label_to_colnames(ahrf))
+ahrf_colnames <- data.frame(ahrf_colnames)
+ahrf_colnames <- t(ahrf_colnames)
+colnames(ahrf) <- ahrf_colnames
+
+ahrf <- 
+  ahrf %>%
+  sjlabelled::remove_all_labels() %>%
+  select(-Blank)
+
+write.csv(ahrf, "ahrf.csv")
+```
+
+
+
+```{r}
+### AHRF
+AHRF <- read.csv("ahrf_edited.csv")
+
+
+
+### HPSA
+HPSA <- read.csv("HPSA.csv")
+
+#unique(HPSA$Common.State.County.FIPS.Code)
+# FIPS = 3,169
+
+#HPSA_county <- 
+#  HPSA %>%
+#  filter(HPSA.Component.Type.Description == "Single County")
+# FIPS = 2,876
+
+HPSA_county_primary <- 
+  HPSA %>%
+  filter(HPSA.Component.Type.Description == "Single County" & HPSA.Discipline.Class == "Primary Care") %>%
+  select(Common.State.County.FIPS.Code, Common.State.Name, Common.County.Name, HPSA.Component.Name, HPSA.Name, HPSA.Score, HPSA.FTE, HPSA.Designation.Population, X..of.Population.Below.100..Poverty, HPSA.Formal.Ratio, Rural.Status, HPSA.Estimated.Served.Population, HPSA.Estimated.Underserved.Population, HPSA.Provider.Ratio.Goal, HPSA.Shortage) %>%
+  rename(FIPS = Common.State.County.FIPS.Code,
+         HPSA.Name.Primary = HPSA.Name, 
+         HPSA.Score.Primary = HPSA.Score, 
+         HPSA.FTE.Primary = HPSA.FTE, 
+         HPSA.Designation.Population.Primary = HPSA.Designation.Population, 
+         Perc.Population.Below.100.Poverty.Primary = X..of.Population.Below.100..Poverty, 
+         HPSA.Formal.Ratio.Primary = HPSA.Formal.Ratio, 
+         Rural.Status.Primary = Rural.Status, 
+         HPSA.Estimated.Served.Population.Primary = HPSA.Estimated.Served.Population, 
+         HPSA.Estimated.Underserved.Population.Primary = HPSA.Estimated.Underserved.Population, 
+         HPSA.Provider.Ratio.Goal.Primary = HPSA.Provider.Ratio.Goal, 
+         HPSA.Shortage.Primary = HPSA.Shortage)
+
+HPSA_county_mental <- 
+  HPSA %>%
+  filter(HPSA.Component.Type.Description == "Single County" & HPSA.Discipline.Class == "Mental Health") %>%
+  select(Common.State.County.FIPS.Code, HPSA.Name, HPSA.Score, HPSA.FTE, HPSA.Designation.Population, X..of.Population.Below.100..Poverty, HPSA.Formal.Ratio, HPSA.Estimated.Served.Population, HPSA.Estimated.Underserved.Population, HPSA.Provider.Ratio.Goal, HPSA.Shortage) %>%
+  rename(FIPS = Common.State.County.FIPS.Code,
+         HPSA.Name.Mental = HPSA.Name, 
+         HPSA.Score.Mental = HPSA.Score, 
+         HPSA.FTE.Mental = HPSA.FTE, 
+         HPSA.Designation.Population.Mental = HPSA.Designation.Population, 
+         Perc.Population.Below.100.Poverty.Mental = X..of.Population.Below.100..Poverty, 
+         HPSA.Formal.Ratio.Mental = HPSA.Formal.Ratio, 
+         HPSA.Estimated.Served.Population.Mental = HPSA.Estimated.Served.Population, 
+         HPSA.Estimated.Underserved.Population.Mental = HPSA.Estimated.Underserved.Population, 
+         HPSA.Provider.Ratio.Goal.Mental = HPSA.Provider.Ratio.Goal, 
+         HPSA.Shortage.Mental = HPSA.Shortage)
+
+HPSA_county_dental <- 
+  HPSA %>%
+  filter(HPSA.Component.Type.Description == "Single County" & HPSA.Discipline.Class == "Dental Health") %>%
+  select(Common.State.County.FIPS.Code, HPSA.Name, HPSA.Score, HPSA.FTE, HPSA.Designation.Population, X..of.Population.Below.100..Poverty, HPSA.Formal.Ratio, HPSA.Estimated.Served.Population, HPSA.Estimated.Underserved.Population, HPSA.Provider.Ratio.Goal, HPSA.Shortage) %>%
+  rename(FIPS = Common.State.County.FIPS.Code,
+         HPSA.Name.Dental = HPSA.Name, 
+         HPSA.Score.Dental = HPSA.Score, 
+         HPSA.FTE.Dental = HPSA.FTE, 
+         HPSA.Designation.Population.Dental = HPSA.Designation.Population, 
+         Perc.Population.Below.100.Poverty.Dental = X..of.Population.Below.100..Poverty, 
+         HPSA.Formal.Ratio.Dental = HPSA.Formal.Ratio, 
+         HPSA.Estimated.Served.Population.Dental = HPSA.Estimated.Served.Population, 
+         HPSA.Estimated.Underserved.Population.Dental = HPSA.Estimated.Underserved.Population, 
+         HPSA.Provider.Ratio.Goal.Dental = HPSA.Provider.Ratio.Goal, 
+         HPSA.Shortage.Dental = HPSA.Shortage)  
+
+HPSA <- full_join(HPSA_county_primary, HPSA_county_mental, by = "FIPS")
+
+HPSA <- full_join(HPSA, HPSA_county_dental, by = "FIPS")
+
+HPSA_scores <- HPSA %>% 
+  select(FIPS, HPSA.Score.Primary, HPSA.Score.Mental, HPSA.Score.Dental, HPSA.Shortage.Primary, HPSA.Shortage.Mental, HPSA.Shortage.Dental)
+```
+
+```{r}
+### CHR
+CHR_base <- read.csv("CHR_data.csv") %>%
+  filter(County != "")
+
+CHR_add <- read.csv("CHR_data_additional.csv") %>%
+  filter(County != "")
+
+CHR <- left_join(CHR_base, CHR_add, by = c("FIPS", "State", "County")) %>%
+  rename(YPLL = Years.of.Potential.Life.Lost.Rate)
+
+CHR$FIPS <- as.character(CHR$FIPS)
+CHR <- left_join(CHR, HPSA_scores, by = "FIPS")
+#CHR$HPSA.Score.Primary <- as.factor(CHR$HPSA.Score.Primary)
+
+CHR$Presence.of.Water.Violation <- as.factor(CHR$Presence.of.Water.Violation)
+CHR$Non.Petitioned.Cases <- as.numeric(CHR$Non.Petitioned.Cases)
+CHR$Petitioned.Cases <- as.numeric(CHR$Petitioned.Cases)
+
+CHR_lm <-
+  CHR %>%
+  select(-contains("AIAN")) %>%
+  select(-contains("Asian")) %>%
+  select(-contains("Hispanic")) %>%
+  select(-contains("Black")) %>%
+  select(-contains("white")) %>%
+  select(-contains("American.Indian")) %>%
+  select(-contains("Pacific")) %>%
+  select(-contains("number")) %>%
+  select(-contains("ratio")) %>%
+  select(-contains("Population")) %>%
+  select(-contains("FIPS")) %>%
+  select(-contains("County")) %>%
+  select(-contains("State")) %>%
+  select(-contains("Denominator")) %>%
+  select(-contains("Numerator")) %>%
+  select(-"percent.Uninsured.y") %>%
+  select(c("YPLL", "percent.Fair.or.Poor.Health", "percent.Smokers", "percent.Adults.with.Obesity", "Food.Environment.Index", "percent.With.Access.to.Exercise.Opportunities", "percent.Excessive.Drinking", "Chlamydia.Rate", "Teen.Birth.Rate", "percent.Uninsured.x", "Primary.Care.Physicians.Rate", "percent.With.Annual.Mammogram", "percent.Vaccinated", "percent.Completed.High.School", "percent.Unemployed", "percent.Children.in.Poverty", "Social.Association.Rate", "Violent.Crime.Rate", "Average.Daily.PM2.5", "percent.Severe.Housing.Problems", "percent.Drive.Alone.to.Work", "percent.Adults.with.Diabetes", "HIV.Prevalence.Rate", "percent.Insufficient.Sleep", "percent.Disconnected.Youth", "Average.Grade.Performance", "Segregation.index", "Spending.per.pupil", "Gender.Pay.Gap", "Median.Household.Income", "percent.Homeowners", "percent.Less.Than.18.Years.of.Age", "percent.65.and.Over", "percent.Not.Proficient.in.English", "percent.female", "percent.rural", "HPSA.Score.Primary", "HPSA.Shortage.Primary"))
+
+#write.csv(CHR_lm, "CHR_Edit.csv")
+```
+
+
+
+```{r}
+CHR %>%
+  filter(Primary.Care.Physicians.Rate < 400) %>%
+  ggplot(aes(x = Primary.Care.Physicians.Rate, y = YPLL)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, alpha = 0.5)
+
+CHR %>%
+  ggplot(aes(x = HPSA.Score.Primary, y = YPLL)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, alpha = 0.5)
+```
+
+```{r eval = FALSE}
+CHR %>%
+  filter(Primary.Care.Physicians.Rate < 400) %>%
+  ggplot(aes(x = Primary.Care.Physicians.Rate, y = percent.Fair.or.Poor.Health)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, alpha = 0.5)
+
+CHR %>%
+  ggplot(aes(x = percent.Fair.or.Poor.Health, y = YPLL)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, alpha = 0.5)
+```
+
+```{r}
+CHR %>%
+  ggplot(aes(x = State, y = YPLL)) +
+  geom_boxplot() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#library(ggridges)
+#CHR %>%
+#  filter(YPLL < 15000) %>%
+#ggplot(aes(x = YPLL, y = State)) +
+#  stat_density_ridges(quantile_lines = TRUE, alpha = 0.7)
+```
+
+
+
+```{r}
+### rsample 
+
+# split data
+set.seed(713)
+trainIndex <- initial_split(CHR_lm, prop = 3/4, strata = YPLL)
+trainingSet <- training(trainIndex)
+testSet <- testing(trainIndex)
+```
+
+```{r}
+##### ML - YPLL
+
+### recipes
+set.seed(713)
+ypllRecipe <-
+  recipe(YPLL ~., data = trainingSet) %>%
+  step_impute_knn(all_predictors()) %>%
+  step_nzv(all_predictors())
+#  step_normalize(all_predictors()) %>%
+#  step_dummy(all_nominal)
+
+# prep and bake the defined recipe
+trainingSet_processed <- ypllRecipe %>%
+  prep(trainingSet) %>%
+  bake(trainingSet)
+testingSet_processed <- ypllRecipe %>%
+  prep(testSet) %>%
+  bake(testSet)
+
+
+
+### parsnip - lm
+linModel <-
+  linear_reg() %>%
+  set_engine("lm")
+
+linModel_fit <- linModel %>% fit(YPLL ~ ., data = trainingSet_processed)
+
+predict(linModel_fit, testingSet_processed)
+
+tidy(linModel_fit)
+
+#pred <- ggpredict(linModel_fit)
+#plot(pred)
+
+#dwplot(linModel_fit)
+
+saveRDS(linModel_fit, "ML_LM.rds")
+
+### parsnip - rf
+rfModel <-
+  rand_forest(mode = "regression", mtry = 10, trees = 1000,
+              min_n = 15) %>%
+  set_engine("randomForest")
+
+rfModel_fit <- rfModel %>% fit(YPLL ~ ., data = trainingSet_processed)
+
+predict(rfModel_fit, testingSet_processed)
+```
+
+
+
+
+
+```{r}
+##### ML - HPSA.Shortage.Primary
+
+### recipes
+set.seed(713)
+shortageRecipe <-
+  recipe(HPSA.Shortage.Primary ~., data = trainingSet) %>%
+  step_impute_knn(all_predictors()) %>%
+  step_nzv(all_predictors())
+#  step_normalize(all_predictors()) %>%
+#  step_dummy(all_nominal)
+
+# prep and bake the defined recipe
+trainingSet_shortage_processed <- shortageRecipe %>%
+  prep(trainingSet) %>%
+  bake(trainingSet)
+testingSet_shortage_processed <- shortageRecipe %>%
+  prep(testSet) %>%
+  bake(testSet)
+
+### parsnip
+# lm
+linModel <-
+  linear_reg() %>%
+  set_engine("lm")
+
+linModel_shortage_fit <- linModel %>% fit(HPSA.Shortage.Primary ~ ., data = trainingSet_shortage_processed)
+
+predict(linModel_shortage_fit, testingSet_shortage_processed)
+
+#dwplot(linModel_shortage_fit)
+
+
+# rf
+rfModel <-
+  rand_forest(mode = "regression", mtry = 10, trees = 1000,
+              min_n = 15) %>%
+  set_engine("randomForest")
+
+rfModel__shortage_fit <- rfModel %>% fit(HPSA.Shortage.Primary ~ ., data = trainingSet_shortage_processed)
+
+predict(rfModel__shortage_fit, testingSet_shortage_processed)
+```
+
+
+
+
+
+```{r eval = FALSE}
+### optional additional steps 
+### see:  https://github.com/RichardOnData/YouTube-Scripts
+
+### yardstick
+set.seed(713)
+YPLLWithPredictions <- testingSet_processed %>%
+  dplyr::select(YPLL) %>%
+  bind_cols(predict(linModel_fit, testingSet_processed))
+
+metricSet <- metric_set(accuracy, yardstick::sens, yardstick::spec, ppv)
+
+metricSet(YPLLWithPredictions, truth = YPLL, estimate = .pred, event_level = "first")
+
+### themis
+#library(themis)
+
+### workflow
+
+### theme
+```
+
+```{r}
+### For Shiny:  https://www.youtube.com/watch?v=O9B4f7fXYwk
+
+```
